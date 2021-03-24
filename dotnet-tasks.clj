@@ -19,16 +19,20 @@
 
 (def nrepl-namespaces
   '[ ;; SRC
-    cnrepl.ack
-    cnrepl.bencode
     cnrepl.core
-    cnrepl.debug
+    cnrepl.ack
     cnrepl.middleware
-    cnrepl.sync.channel
+    cnrepl.debug
+    cnrepl.middleware.interruptible-eval
+    cnrepl.middleware.lookup
+    cnrepl.middleware.completion
+    cnrepl.middleware.sideloader
+    cnrepl.util.print
     ;; TEST
-    cnrepl.bencode-test
-    cnrepl.misc-test
-    cnrepl transport-test])
+    ;;cnrepl.bencode-test
+    ;;cnrepl.misc-test
+    ;;cnrepl transport-test
+    ])
 
 (defn build-nrepl
   "Compiles the nrepl project to dlls.

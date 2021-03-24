@@ -69,7 +69,6 @@
     (string? x) (.ToCharArray ^String x)                  ;;; .toCharArray
     (integer? x) (char-array [(char x)])
     :else x))
-
 (defn with-quota-writer
   "Returns a `java.io.Writer` that wraps `writer` and throws `QuotaExceeded` once
   it has written more than `quota` bytes."
@@ -81,25 +80,25 @@
       (proxy [TextWriter] []                                                        ;;; Writer
         (ToString []                                                                ;;; toString
           (.ToString writer))                                                       ;;; .toString
-        (Write                                                                      ;;; write
-          ([x] 
+        (Write                                                                 ;;; write
+          ([x]
            (let [cbuf (to-char-array x)]
-		    (debug/prn-thread "wgw-x" this "///"  x  "///" cbuf "****")
+		         (debug/prn-thread "wgw-x" this "///"  x  "///" cbuf "****")
              (.Write ^TextWriter this cbuf (int 0) (count cbuf))))                  ;;; .write ^Writer
-          ([x off len]
-           (locking total
-             (let [cbuf (to-char-array x)
-                   rem (- quota @total)]
-			   (debug/prn-thread "wgw-xol" this "///"  x  off len "///" cbuf "****")
-               (vswap! total + len)
-               (.Write writer cbuf ^int off ^int (min len rem))                     ;;; .write
-               (when (neg? (- rem len))
-                 (throw (ArgumentOutOfRangeException.)))))))                        ;;; QuotaExceeded.
+          ;; commented because failing in Magic for now.
+          #_([x off len]
+             (locking total
+               (let [cbuf (to-char-array x)
+                     rem (- quota @total)]
+			           (debug/prn-thread "wgw-xol" this "///"  x  off len "///" cbuf "****")
+                 (vswap! total + len)
+                 (.Write writer cbuf ^int off ^int (min len rem))                     ;;; .write
+                 (when (neg? (- rem len))
+                   (throw (ArgumentOutOfRangeException.)))))))                        ;;; QuotaExceeded.
         (Flush []                                                                   ;;; flush
           (.Flush writer))                                                          ;;; .flush
         (Close []                                                                   ;;; close
           (.Close writer))))))                                                      ;;; .close
-
 (defn replying-PrintWriter
   "Returns a `java.io.PrintWriter` suitable for binding as `*out*` or `*err*`. All
   of the content written to that `PrintWriter` will be sent as messages on the
@@ -108,32 +107,31 @@
   [key {:keys [transport] :as msg} {:keys [::buffer-size ::quota] :as opts}]
   (-> (proxy [TextWriter] []
         (Write 
-		  ([x]
-		     (let [text (str (doto (StringWriter.) 
-			                    (.Write x)))]
-				(when (pos? (count text))
-				  (transport/send transport (misc/response-for msg key text)))))))
+		      ([x]
+		       (let [text (str (doto (StringWriter.)
+			                       (.Write x)))]
+				     (when (pos? (count text))
+				       (transport/send transport (misc/response-for msg key text)))))))
       (with-quota-writer nil)))
-	  
-  
+
 ;;;  (-> (proxy [TextWriter] []                                                          ;;; Writer
 ;;;        (Write                                                                        ;;; write
 ;;;          ([x] 
-;           (let [cbuf (to-char-array x)]
-;		     (debug/prn-thread "rpw-x" this "///" x "///" cbuf "***")
-;             (.Write ^TextWriter this cbuf (int 0) (count cbuf))))                    ;;; .write ^Writer 
-;          ([x off len]  (debug/prn-thread "rpw-xol" x off len)
-;           (let [cbuf (to-char-array x)
-;		         _ (debug/prn-thread "rpw-xol2" this "///" x "///" cbuf "***")
-;                 text (str (doto (StringWriter.)
-;                             (.Write cbuf ^int off ^int len)))]                       ;;; .write
-;             (when (pos? (count text))
-;               (transport/send transport (misc/response-for msg key text))))))
-;        (Flush [])                                                                    ;;; flush
-;        (Close []))                                                                   ;;; close
-;      #_(BufferedStream. (or buffer-size 1024))                                         ;;; #_BufferedWriter.
-;      (with-quota-writer quota)
-;      #_(StreamWriter. true)))                                                          ;;; PrintWriter.
+                                        ;           (let [cbuf (to-char-array x)]
+                                        ;		     (debug/prn-thread "rpw-x" this "///" x "///" cbuf "***")
+                                        ;             (.Write ^TextWriter this cbuf (int 0) (count cbuf))))                    ;;; .write ^Writer 
+                                        ;          ([x off len]  (debug/prn-thread "rpw-xol" x off len)
+                                        ;           (let [cbuf (to-char-array x)
+                                        ;		         _ (debug/prn-thread "rpw-xol2" this "///" x "///" cbuf "***")
+                                        ;                 text (str (doto (StringWriter.)
+                                        ;                             (.Write cbuf ^int off ^int len)))]                       ;;; .write
+                                        ;             (when (pos? (count text))
+                                        ;               (transport/send transport (misc/response-for msg key text))))))
+                                        ;        (Flush [])                                                                    ;;; flush
+                                        ;        (Close []))                                                                   ;;; close
+                                        ;      #_(BufferedStream. (or buffer-size 1024))                                         ;;; #_BufferedWriter.
+                                        ;      (with-quota-writer quota)
+                                        ;      #_(StreamWriter. true)))                                                          ;;; PrintWriter.
 
 (defn- send-streamed
   [{:keys [transport] :as msg}
@@ -143,8 +141,8 @@
                     (let [value (get resp key)]
                       (try 
                         (with-open [writer (replying-PrintWriter key msg opts)]   
-						(debug/prn-thread "S-S1: " value print-fn writer)
-						(debug/prn-thread "S-S2: " value)
+						              (debug/prn-thread "S-S1: " value print-fn writer)
+						              (debug/prn-thread "S-S2: " value)
                           (print-fn value writer))
                         (catch ArgumentOutOfRangeException _                          ;;; QuotaExceeded
                           (transport/send
@@ -163,7 +161,7 @@
                                      (with-quota-writer quota))
                           truncated? (volatile! false)]
                       (try  
-						(debug/prn-thread "S-NS1: " value print-fn writer)
+						            (debug/prn-thread "S-NS1: " value print-fn writer)
                         (print-fn value writer)
                         (catch ArgumentOutOfRangeException _                            ;;; QuotaExceeded
                           (vreset! truncated? true)))
