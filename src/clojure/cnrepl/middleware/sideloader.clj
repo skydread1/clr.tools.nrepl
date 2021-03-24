@@ -16,25 +16,25 @@
   (let [table "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
         sb (StringBuilder.)]
     (loop [shift 4 buf 0]
-      (let [got (.Read in)]                                                           ;;; .read
-        (if (neg? got)
-          (do
-            (when-not (= shift 4)
-              (let [n (bit-and (bit-shift-right buf 6) 63)]
-                (.Append sb (.get_Chars table n))))                                   ;;; .append .charAt
-            (cond
-              (= shift 2) (.append sb "==")
-              (= shift 0) (.append sb \=))
-            (str sb))
-          (let [buf (bit-or buf (bit-shift-left got shift))
-                n (bit-and (bit-shift-right buf 6) 63)]
-            (.Append sb (.get_Chars table n))                                        ;;; .append .charAt
-            (let [shift (- shift 2)]
-              (if (neg? shift)
-                (do
-                  (.Append sb (.get_Chars table (bit-and buf 63)))                   ;;; .append .charAt
-                  (recur 4 0))
-                (recur shift (bit-shift-left buf 6))))))))))
+      #_(let [got (.Read in)]                                                           ;;; .read :FIXME : failing in Magic
+          (if (neg? got)
+            (do
+              (when-not (= shift 4)
+                (let [n (bit-and (bit-shift-right buf 6) 63)]
+                  (.Append sb (.get_Chars table n))))                                   ;;; .append .charAt
+              (cond
+                (= shift 2) (.append sb "==")
+                (= shift 0) (.append sb \=))
+              (str sb))
+            (let [buf (bit-or buf (bit-shift-left got shift))
+                  n (bit-and (bit-shift-right buf 6) 63)]
+              (.Append sb (.get_Chars table n))                                        ;;; .append .charAt
+              (let [shift (- shift 2)]
+                (if (neg? shift)
+                  (do
+                    (.Append sb (.get_Chars table (bit-and buf 63)))                   ;;; .append .charAt
+                    (recur 4 0))
+                  (recur shift (bit-shift-left buf 6))))))))))
 
 (defn base64-decode [^String s]
   (let [table "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"

@@ -9,7 +9,7 @@
   (:import
    clojure.lang.LineNumberingTextReader                                ;;; LineNumberingPushbackReader
    [System.IO TextReader] ))                                           ;;; [java.io Reader StringReader Writer PrintWriter]
-   
+
 (defn response-seq
   "Returns a lazy seq of messages received via the given Transport.
    Called with no further arguments, will block waiting for each message.
@@ -67,12 +67,12 @@
   [client termination-statuses delimited-slots]
   (with-meta
     (comp (partial take-until (comp #(seq (clojure.set/intersection % termination-statuses))
-                                    set
-                                    :status))
-          (let [keys (keys delimited-slots)]
-            (partial filter #(= delimited-slots (select-keys % keys))))
-          client
-          #(merge % delimited-slots))
+                        set
+                        :status))
+       (let [keys (keys delimited-slots)]
+         (partial filter #(= delimited-slots (select-keys % keys))))
+       client
+       #(merge % delimited-slots))
     (-> (meta client)
         (update-in [::termination-statuses] (fnil into #{}) termination-statuses)
         (update-in [::taking-until] merge delimited-slots))))

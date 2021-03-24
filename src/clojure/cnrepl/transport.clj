@@ -78,20 +78,20 @@
        (into {})))
 
 (defmacro ^{:private true} rethrow-on-disconnection
-  [^Socket s & body]
+  [s & body] ;; remove type ^Socket int as magic weirdly fails
   `(try
      ~@body
      #_(catch RuntimeException e#                                              ;;; I'm not sure what is covered here
-       (if (= "EOF while reading" (.getMessage e#))
-         (throw (SocketException. "The transport's socket appears to have lost its connection to the nREPL server"))
-         (throw e#)))
-     (catch EndOfStreamException e#                                             ;;; EOFException
-       (if (= "Invalid netstring. Unexpected end of input." (.getMessage e#))
-         (throw (SocketException. "The transport's socket appears to have lost its connection to the nREPL server"))
+         (if (= "EOF while reading" (.getMessage e#))
+           (throw (SocketException. "The transport's socket appears to have lost its connection to the nREPL server"))
+           (throw e#)))
+     (catch System.IO.EndOfStreamException e#                                             ;;; EOFException
+       (if (= "Invalid netstring. Unexpected end of input." (.Message e#))
+         (throw (.Message (SocketException.)) #_"The transport's socket appears to have lost its connection to the nREPL server")
          (throw e#)))
      (catch Exception e#                                                        ;;; Throwable
        (if (and ~s (not (.Connected ~s)))                                       ;;; .isConnected
-         (throw (SocketException. "The transport's socket appears to have lost its connection to the nREPL server"))
+         (throw (.Message (SocketException.)) #_"The transport's socket appears to have lost its connection to the nREPL server")
          (throw e#)))))
 
 (defn ^{:private true} safe-write-bencode
@@ -113,6 +113,7 @@
   ([in out & [^Socket s]]
    (let [in (PushbackInputStream. (io/input-stream in))
          out (io/output-stream out)]
+     (rethrow-on-disconnection s (bencode/read-bencode in))
      (fn-transport
       #(let [payload (rethrow-on-disconnection s (bencode/read-bencode in))
              unencoded (<bytes (payload "-unencoded"))
@@ -165,12 +166,12 @@
    via simple in/out readers, as with a tty or telnet connection."
   ([^Socket s] (tty s s s))
   ([in out & [^Socket s]]
-    (let [r (PushbackTextReader. (io/text-reader in))                     ;;; PushbackReader. io/reader
-          w (io/text-writer out)                                          ;;; io/writer
+   (let [r (PushbackTextReader. (io/text-reader in))                     ;;; PushbackReader. io/reader
+         w (io/text-writer out)                                          ;;; io/writer
          cns (atom "user")
          prompt (fn [newline?]
-                   (when newline? (.Write w (int \newline)))              ;;; .write
-                   (.Write w (str @cns "=> ")))                           ;;; .write
+                  (when newline? (.Write w (int \newline)))              ;;; .write
+                  (.Write w (str @cns "=> ")))                           ;;; .write
          session-id (atom nil)
          read-msg #(let [code (read r)]
                      (merge {:op "eval" :code [code] :ns @cns :id (str "eval" (uuid))}
@@ -180,10 +181,10 @@
                  (when new-session (reset! session-id new-session))
                  (when ns (reset! cns ns))
                  (doseq [^String x [out err value] :when x]
-                    (.Write w x))                                                    ;;; .write
+                   (.Write w x))                                                    ;;; .write
                  (when (and (= status #{:done}) id (.StartsWith ^String id "eval"))  ;;; .startsWith
                    (prompt true))
-                  (.Flush w))                                                        ;;; .flush
+                 (.Flush w))                                                        ;;; .flush
          read #(let [head (promise)]
                  (swap! read-seq (fn [s]
                                    (deliver head (first s))
@@ -233,6 +234,6 @@
 (defn piped-transports
   "Returns a pair of Transports that read from and write to each other."
   []
-  (let [a (|System.Collections.Concurrent.BlockingCollection`1[System.Object]|.)               ;;; LinkedBlockingQueue      
-        b (|System.Collections.Concurrent.BlockingCollection`1[System.Object]|.)]              ;;; LinkedBlockingQueue  
+  (let [a (|System.Collections.Concurrent.BlockingCollection`1[System.Object]|.)               ;;; LinkedBlockingQueue
+        b (|System.Collections.Concurrent.BlockingCollection`1[System.Object]|.)]              ;;; LinkedBlockingQueue
     [(QueueTransport. a b) (QueueTransport. b a)]))
