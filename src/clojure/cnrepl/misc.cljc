@@ -3,17 +3,18 @@
   useful for anyone extending it)."
   {:author "Chas Emerick"}
   (:refer-clojure :exclude [requiring-resolve])
-  (:require [clojure.clr.io :as io]                        ;;; clojure.java.io
+  (:require #?(:clj [clojure.java.io :as io]
+               :cljr [clojure.clr.io :as io])
             [clojure.string :as str]))
-	
+
 (defn log
   [ex & msgs]
-  (let [ex (when (instance? Exception ex) ex)              ;;; Throwable
+  (let [ex (when (instance? #?(:clj Throwable :cljr Exception) ex) ex)
         msgs (if ex msgs (cons ex msgs))]
     (binding [*out* *err*]
       (apply println "ERROR:" msgs)
-      (when ex (println (.StackTrace ^Exception ex))))))   ;;; (.printStackTrace ^Throwable ex)
-	  
+      (when ex (println #?(:clj (.printStackTrace ^Throwable ex)
+                           :cljr (.StackTrace ^Exception ex)))))))
 
 (defmacro returning
   "Executes `body`, returning `x`."
@@ -23,16 +24,17 @@
 (defn uuid
   "Returns a new UUID string."
   []
-  (str (Guid/NewGuid)))                                    ;;; java.util.UUID/randomUUID
+  (str #?(:clj ( java.util.UUID/randomUUID)
+          :cljr (Guid/NewGuid))))
 
 (defn response-for
   "Returns a map containing the :session and :id from the \"request\" `msg`
    as well as all entries specified in `response-data`, which can be one
    or more maps (which will be merged), *or* key-value pairs.
-   
+
    (response-for msg :status :done :value \"5\")
    (response-for msg {:status :interrupted})
-   
+
    The :session value in `msg` may be any Clojure reference type (to accommodate
    likely implementations of sessions) that has an :id slot in its metadata,
    or a string."
@@ -64,33 +66,34 @@
         (resolve sym)
         (catch Exception _))))
 
-#_(defmacro with-session-classloader                                        ;;; for now, definitely a no-op
-  "This macro does two things:
-  
+#?(:clj
+   (defmacro with-session-classloader ;; for now, definitely a no-op
+     "This macro does two things:
+
    1. If the session has a classloader set, then execute the body using that.
       This is typically used to trigger the sideloader, when active.
-	  
    2. Bind `clojure.lang.Compiler/LOADER` to the context classloader, which
       might also be the sideloader. This is required to get hotloading with
       pomegranate working under certain conditions."
-  [session & body]
-  `(let [ctxcl#  (.getContextClassLoader (Thread/currentThread))
-         alt-cl# (when-let [classloader# (:classloader (meta ~session))]
-                   (classloader#))
-         cl#     (or alt-cl# ctxcl#)]
-     (.setContextClassLoader (Thread/currentThread) cl#)
-     (try
-       (with-bindings {clojure.lang.Compiler/LOADER cl#}
-         ~@body)
-       (finally
-         (.setContextClassLoader (Thread/currentThread) ctxcl#)))))
+     [session & body]
+     `(let [ctxcl#  (.getContextClassLoader (Thread/currentThread))
+            alt-cl# (when-let [classloader# (:classloader (meta ~session))]
+                      (classloader#))
+            cl#     (or alt-cl# ctxcl#)]
+        (.setContextClassLoader (Thread/currentThread) cl#)
+        (try
+          (with-bindings {clojure.lang.Compiler/LOADER cl#}
+            ~@body)
+          (finally
+            (.setContextClassLoader (Thread/currentThread) ctxcl#))))))
 
-(defn java-8?                                                               ;;; definitely a no-oop.
+(defn java-8?  ;; definitely a no-op.
   "Util to check if we are using Java 8. Useful for features that behave
   differently after version 8."
   []
-  false)                     ;;; (.startsWith (System/getProperty "java.runtime.version")
-                             ;;;               "1.8")
+  #?(:clj (.startsWith (System/getProperty "java.runtime.version")
+                       "1.8")
+     :cljr false))
 
 (def safe-var-metadata
   "A list of var metadata attributes are safe to return to the clients.
@@ -100,6 +103,21 @@
   [:ns :name :doc :file :arglists :forms :macro :special-form
    :protocol :line :column :added :deprecated :resource])
 
+(defn- handle-file-meta
+  "Convert :file metadata to string.
+  Typically `value` would be a string, a File or an URL."
+  [value]
+  #?(:clj (when value
+            (str (if (string? value)
+                   ;; try to convert relative file paths like "clojure/core.clj"
+                   ;; to absolute file paths
+                   (or (io/resource value) value)
+                   ;; If :file is a File or URL object we just return it as is
+                   ;; and covert it to string
+                   value)))
+     :cljr value  ;; not sure what the equivalent would be
+     ))
+
 (defn sanitize-meta
   "Sanitize a Clojure metadata map such that it can be bencoded."
   [m]
@@ -108,7 +126,7 @@
       (update :ns str)
       (update :name str)
       (update :protocol str)
-      #_(update :file #(or (some-> % io/resource str) %))                  ;;; not sure what the equivalent would be
+      (update :file handle-file-meta)
       (cond-> (:macro m) (update :macro str))
       (cond-> (:special-form m) (update :special-form str))
       (assoc :arglists-str (str (:arglists m)))
