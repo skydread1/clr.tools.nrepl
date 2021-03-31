@@ -29,41 +29,67 @@
     (is (= '("alength" "alias" "all-ns" "alter" "alter-meta!" "alter-var-root")
            (candidates "al" 'clojure.core)))
 
-    (is (= '("cio/make-binary-reader" "cio/make-binary-writer" "cio/make-input-stream" "cio/make-output-stream" "cio/make-text-reader" "cio/make-text-writer")      ;;; a bunch of things replaced
-           (candidates "cio/make" 'clojure.core)))                   ;;; jio
+    #?(:clj
+       (is (= '("jio/make-input-stream" "jio/make-output-stream" "jio/make-parents" "jio/make-reader" "jio/make-writer")
+              (candidates "jio/make" 'clojure.core)))
+       :cljr
+       (is (= '("cio/make-binary-reader" "cio/make-binary-writer" "cio/make-input-stream" "cio/make-output-stream" "cio/make-text-reader" "cio/make-text-writer")
+              (candidates "cio/make" 'clojure.core))))
 
+    ;; FIXME: fails with magic
     (is (= '("clojure.core/alter" "clojure.core/alter-meta!" "clojure.core/alter-var-root")
            (candidates "clojure.core/alt" 'clojure.core)))
 
     (is (= () (candidates "fake-ns-here/")))
 
+    ;; FIXME: fails in magic
     (is (= () (candidates "/"))))
 
   (testing "namespace completion"
     (is (= '("cnrepl.util.completion" "cnrepl.util.completion-test")
            (candidates "cnrepl.util.comp")))
 
-    #_(is (set/subset?                                   ;;; I'm not sure wha tthe provlem is -- not getting any of these internals.  ClojureCLR bug or completions bug?
-         #{"clojure.core" "clojure.core.ArrayChunk" "clojure.core.ArrayManager" "clojure.core.IVecImpl" "clojure.core.Vec" "clojure.core.VecNode" "clojure.core.VecSeq" "clojure.core.protocols" "clojure.core.protocols.InternalReduce"}
-         (set (candidates "clojure.co")))))
+    #_(is (set/subset?                                   ;;; I'm not sure what the problem is -- not getting any of these internals.  ClojureCLR bug or completions bug?
+           #{"clojure.core" "clojure.core.ArrayChunk" "clojure.core.ArrayManager" "clojure.core.IVecImpl" "clojure.core.Vec" "clojure.core.VecNode" "clojure.core.VecSeq" "clojure.core.protocols" "clojure.core.protocols.InternalReduce"}
+           (set (candidates "clojure.co")))))
 
   (testing "Java instance methods completion"
-    (is (= '(".ToUpper" ".ToUpperInvariant")              ;;; .toUpperCase
-           (candidates ".ToUpper")))                      ;;; .toUpper
+    #?(:clj
+       (is (= '(".toUpperCase")
+              (candidates ".toUpper")))
+       :cljr
+       (is (= '(".ToUpper" ".ToUpperInvariant")
+              (candidates ".ToUpper"))))
 
-    (is (distinct-candidates? ".ToString")))              ;;; .toString
+    #?(:clj
+       (is (distinct-candidates? ".toString"))
+       :cljr
+       (is (distinct-candidates? ".ToString"))))
 
-  (testing "static members completion"
-    (is (= '("Console/KeyAvailable")               ;;; "System/out"
-           (candidates "Console/K")))              ;;; "System/o"
+  #?(:clj
+     (testing "static members completion"
+       (is (= '("System/out")
+              (candidates "System/o")))
 
-    (is (= '("System.Console/KeyAvailable")               ;;; "java.lang.System/out"
-           (candidates "System.Console/KeyAvailable")))   ;;; "java.lang.System/out"
+       (is (= '("java.lang.System/out")
+              (candidates "java.lang.System/out")))
 
-    (is (some #{"String/Concat"} (candidates "String/")))    ;;; "String/valueOf
-    (is (distinct-candidates? "String/C"))                    ;;; String/v
+       (is (some #{"String/valueOf"} (candidates "String/")))
+       (is (distinct-candidates? "String/v"))
 
-    (is (not (some #{"String/IndexOf" ".IndexOf"} (candidates "String/")))))    ;;; indexOf
+       (is (not (some #{"String/indexOf" ".indexOf"} (candidates "String/")))))
+     :cljr
+     (testing "static members completion"
+       (is (= '("Console/KeyAvailable")
+              (candidates "Console/K")))
+
+       (is (= '("System.Console/KeyAvailable")
+              (candidates "System.Console/KeyAvailable")))
+
+       (is (some #{"String/Concat"} (candidates "String/")))
+       (is (distinct-candidates? "String/C"))
+
+       (is (not (some #{"String/IndexOf" ".IndexOf"} (candidates "String/"))))))
 
   (testing "candidate types"
     (is (some #{{:candidate "t-var"
@@ -93,8 +119,12 @@
               (completions "unquote" 'clojure.core)))
     (is (some #{{:candidate "if" :ns "clojure.core" :type :special-form}}
               (completions "if" 'clojure.core)))
-    (is (some #{{:candidate "ArgumentException" :type :class}}          ;;; UnsatisfiedLinkError
-              (completions "ArgumentEx" 'clojure.core)))                  ;;;
+    #?(:clj
+       (is (some #{{:candidate "UnsatisfiedLinkError" :type :class}}
+                 (completions "Unsatisfied" 'clojure.core)))
+       :cljr
+       (is (some #{{:candidate "ArgumentException" :type :class}}
+                 (completions "ArgumentEx" 'clojure.core))))
     ;; ns with :doc meta
     (is (some #{{:candidate "clojure.core"
                  :type :namespace}}
@@ -111,12 +141,25 @@
                  :type :namespace
                  :doc "Unit tests for completion utilities."}}
               (completions "cnrepl.util.completion-test" 'clojure.core {:extra-metadata #{:doc}})))
-    (is (some #{{:candidate "Int32/Parse" :type :static-method}}                                       ;;; Integer/parseInt
-              (completions "Int32/Parse" 'clojure.core)))                                              ;;; Integer/parseInt
-    (is (some #{{:candidate "Environment/SetEnvironmentVariable", :type :static-method}}                                   ;;; "File/separator"
-              (completions "Environment/" 'cnrepl.util.completion)))                                          ;;; "File/"
-    (is (some #{{:candidate ".ToString" :type :method}}                                                ;;;.toString                                
-              (completions ".ToString" 'clojure.core)))))                                              ;;;.toString  
+    #?(:clj
+       (is (some #{{:candidate "Integer/parseInt" :type :static-method}}
+                 (completions "Integer/parseInt" 'clojure.core)))
+       :cljr
+       (is (some #{{:candidate "Int32/Parse" :type :static-method}}
+                 (completions "Int32/Parse" 'clojure.core))))
+
+    #?(:clj
+       (is (some #{{:candidate "File/separator", :type :static-method}}
+                 (completions "File/" 'nrepl.util.completion)))
+       :cljr
+       (is (some #{{:candidate "Environment/SetEnvironmentVariable", :type :static-method}}
+                 (completions "Environment/" 'cnrepl.util.completion))))
+    #?(:clj
+       (is (some #{{:candidate ".toString" :type :method}}
+                 (completions ".toString" 'clojure.core)))
+       :cljr
+       (is (some #{{:candidate ".ToString" :type :method}}
+                 (completions ".ToString" 'clojure.core))))))
 
 (deftest keyword-completions-test
   (testing "colon prefix"

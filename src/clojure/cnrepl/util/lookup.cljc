@@ -8,10 +8,7 @@
   the API is subject to changes."
   {:author "Bozhidar Batsov"
    :added "0.8"}
-  (:require
-   [clojure.clr.io :as io]                ;;; clojure.java.io
-   [clojure.string :as str]
-   [cnrepl.misc :as misc]))               ;;; nrepl
+  (:require [cnrepl.misc :as misc])) ;; nrepl
 
 (defn special-sym-meta
   [sym]

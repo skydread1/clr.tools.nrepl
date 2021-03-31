@@ -7,11 +7,14 @@
    :added  "0.8"}
   (:require [clojure.main]
             [cnrepl.misc :as misc])                                 ;;; nrepl
-  (:import                                                          ;;; [java.util.jar JarFile]
-                                                                    ;;; [java.io File]
-           [System.Reflection BindingFlags MethodInfo MemberInfo    ;;; [java.lang.reflect Field Member]
-                              PropertyInfo]                         ;;; [java.util.jar JarEntry]
-           ))                                                       ;;; [java.util.concurrent ConcurrentHashMap]
+  (:import #?@(:clj
+               [[java.util.jar JarFile JarEntry]
+                [java.io File]
+                [java.lang.reflect Field Member]
+                [java.util.concurrent ConcurrentHashMap]]
+               :cljr
+               [[System.Reflection BindingFlags MethodInfo MemberInfo PropertyInfo]])
+           ))
 
 ;; Code adapted from Compliment (https://github.com/alexander-yakushev/compliment)
 
@@ -21,25 +24,27 @@
 
 (defn all-keywords
   []
-  ;;;(let [^Field field (.getDeclaredField clojure.lang.Keyword "table")]
-  ;;;  (.setAccessible field true)
-  ;;;  (.keySet ^ConcurrentHashMap (.get field nil)))
-  (let [skmInfo 
-         (.GetField clojure.lang.Keyword 
-		            "_symKeyMap" 
-					(enum-or  BindingFlags/Static 
-					          BindingFlags/NonPublic))
-         skm 
-		   (.GetValue skmInfo nil)
-		 dictInfo 
-		   (.GetField (class skm) 
-		              "_dict" 
-					  (enum-or System.Reflection.BindingFlags/NonPublic 
-					          System.Reflection.BindingFlags/Instance))
-		 dict
-		   (.GetValue dictInfo skm)]
-	(.Keys dict)))
-	
+  #?(:clj
+     (let [^Field field (.getDeclaredField clojure.lang.Keyword "table")]
+       (.setAccessible field true)
+       (.keySet ^ConcurrentHashMap (.get field nil)))
+     :cljr
+     (let [skmInfo 
+           (.GetField clojure.lang.Keyword
+		                  "_symKeyMap"
+					            (enum-or  BindingFlags/Static
+					                      BindingFlags/NonPublic))
+           skm
+		       (.GetValue skmInfo nil)
+		       dictInfo
+		       (.GetField (class skm)
+		                  "_dict"
+					            (enum-or System.Reflection.BindingFlags/NonPublic
+					                     System.Reflection.BindingFlags/Instance))
+		       dict
+		       (.GetValue dictInfo skm)]
+	     (.Keys dict))))
+
 (defn- resolve-namespace
   [sym ns]
   (get (ns-aliases ns) sym (find-ns sym)))
@@ -52,7 +57,7 @@
     (sequence
      (comp
       (filter #(= (namespace %) ns-alias-name))
-      (filter #(.StartsWith (name %) prefix))             ;;; .startsWith
+      (filter #(#?(:clj .startsWith :cljr .StartsWith) (name %) prefix))
       (map #(str "::" ns-alias "/" (name %)))
       (map annotate-keyword))
      (all-keywords))))
@@ -64,7 +69,7 @@
   (sequence
    (comp
     (filter #(= (namespace %) (str ns)))
-    (filter #(.StartsWith (name %) (subs prefix 2)))             ;;; .startsWith
+    (filter #(#?(:clj .startsWith :cljr .StartsWith) (name %) (subs prefix 2)))
     (map #(str "::" (name %)))
     (map annotate-keyword))
    (all-keywords)))
@@ -76,7 +81,10 @@
   (sequence
    (comp
     (map (comp name first))
-    (filter (fn [^String alias-name] (.StartsWith alias-name (subs prefix 2))))             ;;; .startsWith
+    #?(:clj
+       (filter (fn [^String alias-name] (.startsWith alias-name (subs prefix 2))))
+       :cljr
+       (filter (fn [^String alias-name] (.StartsWith alias-name (subs prefix 2)))))
     (map #(str "::" (name %)))
     (map annotate-keyword))
    (ns-aliases ns)))
@@ -87,7 +95,7 @@
   [prefix]
   (sequence
    (comp
-    (filter #(.StartsWith (str %) (subs prefix 1)))             ;;; .startsWith
+    (filter #(#?(:clj .startsWith :cljr .StartsWith) (str %) (subs prefix 1)))
     (map #(str ":" %))
     (map annotate-keyword))
    (all-keywords)))
@@ -95,9 +103,9 @@
 (defn keyword-candidates
   [^String prefix ns]
   (assert (string? prefix))
-  (let [double-colon? (.StartsWith prefix "::")               ;;; .startsWith
-        single-colon? (.StartsWith prefix ":")                ;;; .startsWith
-        slash-pos (.IndexOf prefix "/")]                      ;;; .indexOf
+  (let [double-colon? #?(:clj (.startsWith prefix "::") :cljr (.StartsWith prefix "::"))
+        single-colon? #?(:clj (.startsWith prefix ":") :cljr (.StartsWith prefix ":"))
+        slash-pos #?(:clj (.indexOf prefix "/") :cljr (.IndexOf prefix "/"))]
     (cond
       (and double-colon? (pos? slash-pos))
       (let [ns-alias (subs prefix 2 slash-pos)
@@ -140,66 +148,107 @@
 (def special-forms
   '[def if do let quote var fn loop recur throw try monitor-enter monitor-exit dot new set!])
 
-(defn- static? [ member]              ;;; java.lang.reflect.Member
-  (let [member (if (instance? PropertyInfo member) (.GetGetMethod member) member)] 
-    (.IsStatic member)))                                                                              ;;; (java.lang.reflect.Modifier/isStatic (.getModifiers member))
+#?(:clj
+   (defn- static? [#^java.lang.reflect.Member member]
+     (java.lang.reflect.Modifier/isStatic (.getModifiers member)))
+   :cljr
+   (defn- static? [member] ;;; java.lang.reflect.Member
+     (let [member (if (instance? PropertyInfo member) (.GetGetMethod member) member)]
+       (.IsStatic member))))
 
 (defn ns-java-methods
   "Returns a list of Java method names for a given namespace."
   [ns]
-  (distinct ; some methods might exist in multiple classes
-   (for [class (vals (ns-imports ns)) method (.GetMethods ^Type class) :when (static? method)]        ;;; getMethods  ^Class
-     (str "." (.Name ^MethodInfo method)))))                                                          ;;; .getName  ^Member
+  #?(:clj
+     (distinct                    ; some methods might exist in multiple classes
+      (for [class (vals (ns-imports ns))
+            method (.getMethods ^Class class)
+            :when (static? method)]
+        (str "." (.getName ^Member method))))
+     :cljr
+     (distinct                    ; some methods might exist in multiple classes
+      (for [class (vals (ns-imports ns))
+            method (.GetMethods ^Type class)
+            :when (static? method)]
+        (str "." (.Name ^MethodInfo method))))))
 
-(defn static-members
-  "Returns a list of potential static members for a given class"
-  [^Type class]                                                                                       ;;; ^Class
-  (->> (concat (.GetMethods class) (.GetFields class) (.GetProperties class))                         ;;; .getMethods .getDeclaredFields, added .GetProperties
-       (filter static?)
-       (map #(.Name ^MemberInfo %))                                                                   ;;; getName  ^Member
-       (distinct)))
+#?(:clj
+   (defn static-members
+     "Returns a list of potential static members for a given class"
+     [^Class class]
+     (->> (concat (.getMethods class) (.getDeclaredFields class))
+          (filter static?)
+          (map #(.getName ^Member %))
+          distinct))
+   :cljr (defn static-members
+           "Returns a list of potential static members for a given class"
+           [^Type class] 
+           (->> (concat (.GetMethods class) (.GetFields class) (.GetProperties class))
+                (filter static?)
+                (map #(.Name ^MemberInfo %))
+                distinct)))
 
-(defn path-files [^String path]   ;;; needs a complete rethinking for CLR
-  ())                             ;;;  (cond (.endsWith path "/*")
-                                  ;;;        (for [^File jar (.listFiles (File. path)) :when (.endsWith ^String (.getName jar) ".jar")
-                                  ;;;              file (path-files (.getPath jar))]
-                                  ;;;          file)
+#?(:clj
+   (defn path-files [^String path]
+     (cond (.endsWith path "/*")
+           (for [^File jar (.listFiles (File. path)) :when (.endsWith ^String (.getName jar) ".jar")
+                 file (path-files (.getPath jar))]
+             file)
 
-                                  ;;;        (.endsWith path ".jar")
-                                  ;;;        (try (for [^JarEntry entry (enumeration-seq (.entries (JarFile. path)))]
-                                  ;;;               (.getName entry))
-                                  ;;;             (catch Exception e))
+           (.endsWith path ".jar")
+           (try (for [^JarEntry entry (enumeration-seq (.entries (JarFile. path)))]
+                  (.getName entry))
+                (catch Exception _e))
 
-                                  ;;;        :else
-                                  ;;;        (for [^File file (file-seq (File. path))]
-                                  ;;;          (.replace ^String (.getPath file) path ""))))
+           :else
+           (for [^File file (file-seq (File. path))]
+             (.replace ^String (.getPath file) path ""))))
+   :cljr
+   (defn path-files [^String path] ;; TODO: needs a complete rethinking for CLR
+     ()))
 
-(def classfiles                   ;;; needs a complete rethinking for CLR
-  ())                             ;;; (for [prop (filter #(System/getProperty %1) ["sun.boot.class.path" "java.ext.dirs" "java.class.path"])
-                                  ;;;         path (.split (System/getProperty prop) File/pathSeparator)
-                                  ;;;         ^String file (path-files path) :when (and (.endsWith file ".class") (not (.contains file "__")))]
-                                  ;;;     file)
+#?(:clj
+   (def classfiles
+     (for [prop (filter #(System/getProperty %1) ["sun.boot.class.path" "java.ext.dirs" "java.class.path"])
+           path (.split (System/getProperty prop) File/pathSeparator)
+           ^String file (path-files path) :when (and (.endsWith file ".class") (not (.contains file "__")))]
+       file))
+   :cljr
+   (def classfiles ;; TODO: needs a complete rethinking for CLR
+     ()))
 
-(defn- classname [^String file]   ;;; needs a complete rethinking for CLR
-  file)                           ;;;    (.. file (replace ".class" "") (replace File/separator "."))
+#?(:clj
+   (defn- classname [^String file]
+     (.. file (replace ".class" "") (replace File/separator ".")))
+   :cljr
+   (defn- classname [^String file] ;; TODO: needs a complete rethinking for CLR
+     file))
 
-(def top-level-classes            ;;; needs a complete rethinking for CLR
-   (future ()))                   ;;;   (future
-                                  ;;;     (doall
-                                  ;;;      (for [file classfiles :when (re-find #"^[^\$]+\.class" file)]
-                                  ;;;        (classname file))))
+#?(:clj
+   (def top-level-classes
+     (future
+       (doall
+        (for [file classfiles :when (re-find #"^[^\$]+\.class" file)]
+          (classname file)))))
+   :cljr
+   (def top-level-classes ;; TODO: needs a complete rethinking for CLR
+     (future ())))
 
-(def nested-classes               ;;; needs a complete rethinking for CLR
-  (future ()))                    ;;; (future
-                                  ;;;     (doall
-                                  ;;;      (for [file classfiles :when (re-find #"^[^\$]+(\$[^\d]\w*)+\.class" file)]
-                                  ;;;        (classname file))))
+#?(:clj
+   (def nested-classes
+     (future
+       (doall
+        (for [file classfiles :when (re-find #"^[^\$]+(\$[^\d]\w*)+\.class" file)]
+          (classname file)))))
+   :cljr
+   (def nested-classes ;; TODO: needs a complete rethinking for CLR
+     (future ())))
 
 (defn resolve-class [ns sym]
   (try (let [val (ns-resolve ns sym)]
          (when (class? val) val))
        (catch Exception e
-         (when (not= System.TypeLoadException                               ;;;  not sure what to put here. ClassNotFoundException
+         (when (not= #?(:clj ClassNotFoundException :cljr System.TypeLoadException) ;; not sure what to put here
                      (class (clojure.main/repl-exception e)))
            (throw e)))))
 
@@ -258,7 +307,8 @@
 
 (defn scoped-candidates
   [^String prefix ns options]
-  (when-let [prefix-scope (first (System.Text.RegularExpressions.Regex/Split prefix "/" ))]                          ;;; .split "/"
+  (when-let [prefix-scope (first
+                           (#?(:clj .split :cljr System.Text.RegularExpressions.Regex/Split) prefix "/" ))]
     (let [scope (symbol prefix-scope)]
       (map #(update % :candidate (fn [c] (str scope "/" c)))
            (if-let [class (resolve-class ns scope)]
@@ -269,7 +319,7 @@
 (defn class-candidates
   [^String prefix ns]
   (map annotate-class
-       (if (.Contains prefix "+")                                                                      ;;; .Contains  $
+       (if (#?(:clj .contains :cljr .Contains) prefix "+")
          @nested-classes
          @top-level-classes)))
 
@@ -283,11 +333,11 @@
 (defn completion-candidates
   [^String prefix ns options]
   (cond
-    (.StartsWith prefix ":") (keyword-candidates prefix ns)                                            ;;; .startsWith
-    (.StartsWith prefix ".") (ns-java-method-candidates ns)                                            ;;; .startsWith
-    (.Contains prefix "/")  (scoped-candidates prefix ns options)                                      ;;; .Contains
-    (.Contains prefix ".")  (concat (ns-candidates ns options) (class-candidates prefix ns))           ;;; .Contains
-    :else                   (generic-candidates ns options)))
+    (#?(:clj .startsWith :cljr .StartsWith) prefix ":") (keyword-candidates prefix ns)
+    (#?(:clj .startsWith :cljr .StartsWith) prefix ".") (ns-java-method-candidates ns)
+    (#?(:clj .contains :cljr .Contains) prefix "/")     (scoped-candidates prefix ns options)
+    (#?(:clj .contains :cljr .Contains) prefix ".")     (concat (ns-candidates ns options) (class-candidates prefix ns))
+    :else                                               (generic-candidates ns options)))
 
 (defn completions
   "Return a sequence of matching completion candidates given a prefix string and an optional current namespace."
@@ -297,4 +347,4 @@
    (completions prefix ns nil))
   ([^String prefix ns options]
    (let [candidates (completion-candidates prefix ns options)]
-     (sort-by :candidate (filter #(.StartsWith ^String (:candidate %) prefix) candidates)))))          ;;; .startsWith
+     (sort-by :candidate (filter #(#?(:clj .startsWith :cljr .StartsWith) ^String (:candidate %) prefix) candidates)))))

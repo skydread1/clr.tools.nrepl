@@ -1,9 +1,9 @@
 (ns cnrepl.util.lookup-test
   (:require [clojure.test :refer :all]
-            [clojure.string :as str]
             [cnrepl.bencode :as bencode]
             [cnrepl.util.lookup :as l :refer [lookup]])
-  (:import (System.IO MemoryStream)))                                 ;;; (java.io ByteArrayOutputStream))
+  (:import #?(:clj (java.io ByteArrayOutputStream)
+              :cljr (System.IO MemoryStream))))
 
 (deftest lookup-test
   (testing "special sym lookup"
@@ -13,7 +13,7 @@
     (is (not-empty (lookup 'cnrepl.util.lookup 'clojure.core/map))))
 
   (testing "aliased sym lookup"
-    (is (not-empty (lookup 'cnrepl.util.lookup 'str/upper-case))))
+    (is (not-empty (lookup 'cnrepl.util.lookup 'clojure.string/upper-case))))
 
   (testing "non-qualified lookup"
     (is (not-empty (lookup 'clojure.core 'map)))
@@ -28,13 +28,13 @@
   (testing "macro lookup"
     (is (= {:ns "clojure.core"
             :name "future"
-            :macro "True"}                                                            ;;; "true"   -- Seriously, (str true) => "true" in JVM, "True" in CLR
+            :macro #?(:clj "true" :cljr "True")}
            (select-keys (lookup 'clojure.core 'future) [:ns :name :macro]))))
 
   (testing "special form lookup"
     (is (= {:ns "clojure.core"
             :name "let"
-            :special-form "True"}                                                     ;;; "true"   -- Seriously, (str true) => "true" in JVM, "True" in CLR
+            :special-form #?(:clj "true" :cljr "True")}
            (select-keys (lookup 'clojure.core 'let) [:ns :name :special-form]))))
 
   (testing "Java sym lookup"
@@ -43,12 +43,20 @@
 (defn- bencode-str
   "Bencode a thing and write it into a string."
   [thing]
-  (let [out (MemoryStream.)]                                                     ;;; ByteArrayOutputStream
-    (try
-      (bencode/write-bencode out thing)
-      (.ToString out)                                                            ;;; .toString
-      (catch ArgumentException ex                                                ;;; IllegalArgumentException
-        (throw (ex-info (.Message ex) {:thing thing}))))))                       ;;; .getMessage
+  #?(:clj
+     (let [out (ByteArrayOutputStream.)]
+       (try
+         (bencode/write-bencode out thing)
+         (.toString out)
+         (catch IllegalArgumentException ex
+           (throw (ex-info (.getMessage ex) {:thing thing})))))
+     :cljr
+     (let [out (MemoryStream.)]
+       (try
+         (bencode/write-bencode out thing)
+         (.ToString out)
+         (catch ArgumentException ex
+           (throw (ex-info (.Message ex) {:thing thing})))))))
 
 (defn- lookup-public-vars
   "Look up every public var in all namespaces in the classpath and return the result as a set."
