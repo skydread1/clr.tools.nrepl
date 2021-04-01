@@ -10,6 +10,3 @@
 
 (defn prn-thread [& args]
   (send pr-agent write-out  args))
-  
-  
-   
