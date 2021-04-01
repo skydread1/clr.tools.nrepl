@@ -6,9 +6,7 @@
    [cnrepl.misc :refer [uuid]]
    [cnrepl.transport :as transport]
    [cnrepl.version :as version])
-  (:import
-   clojure.lang.LineNumberingTextReader                                ;;; LineNumberingPushbackReader
-   [System.IO TextReader] ))                                           ;;; [java.io Reader StringReader Writer PrintWriter]
+  #?(:cljr (:import [System.IO])))
 
 (defn response-seq
   "Returns a lazy seq of messages received via the given Transport.
@@ -16,7 +14,7 @@
    The seq will end only when the underlying Transport is closed (i.e.
    returns nil from `recv`) or if a message takes longer than `timeout`
    millis to arrive."
-  ([transport] (response-seq transport Int32/MaxValue))                        ;;; Long/MAX_VALUE
+  ([transport] (response-seq transport #?(:clj Long/MAX_VALUE :cljr Int32/MaxValue)))
   ([transport timeout]
    (take-while identity (repeatedly #(transport/recv transport timeout)))))
 
@@ -35,7 +33,8 @@
                            [now %]
                            head))
                        ;; nanoTime appropriate here; looking to maintain ordering, not actual timestamps
-                       (System.Diagnostics.Stopwatch/GetTimestamp))            ;;; (System/nanoTime))
+                       #?(:clj (System/nanoTime)
+                          :cljr (System.Diagnostics.Stopwatch/GetTimestamp)))
         tracking-seq (fn tracking-seq [responses]
                        (lazy-seq
                         (if (seq responses)
@@ -93,8 +92,12 @@
   [client & {:keys [clone]}]
   (let [resp (first (message client (merge {:op "clone"} (when clone {:session clone}))))]
     (or (:new-session resp)
-        (throw (InvalidOperationException.                                                ;;; IllegalStateException.
-                (str "Could not open new session; :clone response: " resp))))))
+        #?(:clj
+           (throw (IllegalStateException.
+                        (str "Could not open new session; :clone response: " resp)))
+           :cljr
+           (throw (InvalidOperationException.
+                   (str "Could not open new session; :clone response: " resp)))))))
 
 (defn client-session
   "Returns a function of one argument.  Accepts a message that is sent via the
@@ -144,16 +147,17 @@
   (apply code* body))
 
 (defn read-response-value
-  "Returns the provided response message, replacing its :value string with
+ "Returns the provided response message, replacing its :value string with
    the result of (read)ing it.  Returns the message unchanged if the :value
    slot is empty or not a string."
-  [{:keys [value] :as msg}]
-  (if-not (string? value)
-    msg
-    (try
-      (assoc msg :value (read-string value))
-      (catch Exception e
-        (throw (InvalidOperationException. (str "Could not read response value: " value) e))))))    ;DM: IllegalStateException
+ [{:keys [value] :as msg}]
+ (if-not (string? value)
+   msg
+   (try
+     (assoc msg :value (read-string value))
+     (catch Exception e
+       #?(:clj (throw (IllegalStateException. (str "Could not read response value: " value) e))
+          :cljr (throw (InvalidOperationException. (str "Could not read response value: " value) e)))))))
 
 (defn response-values
   "Given a seq of responses (as from response-seq or returned from any function returned
@@ -175,24 +179,34 @@
   [& {:keys [port host transport-fn] :or {transport-fn transport/bencode
                                           host "127.0.0.1"}}]
   {:pre [transport-fn port]}
-  (transport-fn (.Client (System.Net.Sockets.TcpClient. ^String host (int port)))))    ;;; java.net.Socket. 
+  #?(:clj (transport-fn (java.net.Socket. ^String host (int port)))
+     :cljr (transport-fn (.Client (System.Net.Sockets.TcpClient. ^String host (int port))))))
 
-(defn- ^System.Uri to-uri                                                              ;;; ^java.net.URI
-  [x]
-  {:post [(instance? System.Uri %)]}                                                   ;;; java.net.URI
-  (if (string? x)
-    (System.Uri. x)                                                                    ;;; java.net.URI
-    x))
+#?(:clj
+   (defn- ^java.net.URI to-uri
+     [x]
+     {:post [(instance? java.net.URI %)]}
+     (if (string? x)
+       (java.net.URI. x)
+       x))
+   :cljr
+   (defn- ^System.Uri to-uri
+     [x]
+     {:post [(instance? System.Uri %)]}
+     (if (string? x)
+       (System.Uri. x)
+       x)))
 
 (defn- socket-info
   [x]
   (let [uri (to-uri x)
-        port (.Port uri)]                                                              ;;; .getPort
-    (merge {:host (.Host uri)}                                                         ;;; .getHost
+        port #?(:clj (.getPort uri) :cljr (.Port uri))]
+    (merge {:host #?(:clj (.getHost uri) :cljr (.Host uri))}
            (when (pos? port)
              {:port port}))))
 
-(def ^{:private false} uri-scheme #(-> (to-uri %) .Scheme .ToLower))                   ;;; .getScheme  .toLowerCase
+#?(:clj (def ^{:private false} uri-scheme #(-> (to-uri %) .getScheme .toLowerCase))
+   :cljr (def ^{:private false} uri-scheme #(-> (to-uri %) .Scheme .ToLower)))
 
 (defmulti url-connect
   "Connects to an nREPL endpoint identified by the given URL/URI.  Valid
@@ -227,7 +241,7 @@
 
 (defmethod url-connect :default
   [uri]
-  (throw (ArgumentException.                                                                   ;;; IllegalArgumentException.
+  (throw (#?(:clj IllegalArgumentException. :cljr ArgumentException.)
           (format "No nREPL support known for scheme %s, url %s" (uri-scheme uri) uri))))
 
 (def ^{:deprecated "0.5.0"} version
