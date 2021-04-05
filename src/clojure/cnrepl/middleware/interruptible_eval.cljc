@@ -9,12 +9,17 @@
    [cnrepl.middleware :refer [set-descriptor!]]
    [cnrepl.middleware.caught :as caught]
    [cnrepl.middleware.print :as print]
-   [cnrepl.misc :as misc :refer [response-for ]]                       ;;; with-session-classloader -- removed
+   [cnrepl.misc :as misc :refer [response-for #?(:clj with-session-classloader)]]
    [cnrepl.transport :as t])
   (:import
-   (clojure.lang Compiler+CompilerException LineNumberingTextReader)   ;;;Compiler$CompilerException LineNumberingPushbackReader
-   (System.IO StringReader TextWriter)                                 ;;;(java.io FilterReader LineNumberReader StringReader Writer)
-   (System.Threading ThreadInterruptedException)))                     ;;; (java.lang.reflect Field)
+   #?@(:clj
+       [(clojure.lang Compiler$CompilerException LineNumberingPushbackReader)
+        (java.io StringReader Writer)
+        (java.lang.reflect Field)]
+       :cljr
+       [(clojure.lang Compiler+CompilerException LineNumberingTextReader)
+        (System.IO StringReader TextWriter)
+        (System.Threading ThreadInterruptedException)])))
 
 (def ^:dynamic *msg*
   "The message currently being evaluated."
@@ -25,33 +30,53 @@
   []
   (dissoc (get-thread-bindings) #'*msg*))
 
-(defn- set-line!
-  [^LineNumberingTextReader reader line]                                         ;;; ^LineNumberingPushbackReader
-  (-> reader (.set_LineNumber line)))                                            ;;; .setLineNumber
+#?(:clj
+   (defn- set-line!
+     [^LineNumberingPushbackReader reader line]
+     (-> reader (.setLineNumber line)))
+   :cljr
+   (defn- set-line!
+     [^LineNumberingTextReader reader line]
+     (-> reader (.set_LineNumber line))))
 
-(defn- set-column!                                                               ;;; It would be easier to make the column number settable.  Why not, if rown
-  [^LineNumberingTextReader reader column]                                       ;;; ^LineNumberingPushbackReader
-  (when-let [field (.GetField LineNumberingTextReader "_columnNumber"            ;;; (->> LineNumberingPushbackReader
-                        (enum-or System.Reflection.BindingFlags/NonPublic        ;;;      (.getDeclaredFields)
-					             System.Reflection.BindingFlags/Instance))]      ;;; (filter #(= "_columnNumber" (.getName ^Field %)))
-                                                                                 ;;; first)
-    (.SetValue field reader column)                                              ;;; (-> ^Field field
-                                                                                 ;;;     (doto (.setAccessible true))
-    ))                                                                           ;;;           (.set reader column))
+#?(:clj
+   (defn- set-column!
+     [^LineNumberingPushbackReader reader column]
+     (when-let [field (->> LineNumberingPushbackReader
+                           (.getDeclaredFields)
+                           (filter #(= "_columnNumber" (.getName ^Field %)))
+                           first)]
+       (-> ^Field field
+           (doto (.setAccessible true))
+           (.set reader column))))
+   :cljr
+   (defn- set-column! ;;; It would be easier to make the column number settable.  Why not, if rown
+     [^LineNumberingTextReader reader column]
+     (when-let [field (.GetField LineNumberingTextReader "_columnNumber"
+                                 (enum-or System.Reflection.BindingFlags/NonPublic
+					                                System.Reflection.BindingFlags/Instance))]
+       (.SetValue field reader column))))
 
 (defn- source-logging-pushback-reader
   [code line column]
-  (let [reader (LineNumberingTextReader. (StringReader. code))]                  ;;; LineNumberingPushbackReader.
+  (let [reader (#?(:clj LineNumberingPushbackReader. :cljr LineNumberingTextReader.) (StringReader. code))]
     (when line (set-line! reader (int line)))
     (when column (set-column! reader (int column)))
     reader))
 
-(defn- interrupted?
-  "Returns true if the given throwable was ultimately caused by an interrupt."
-  [^Exception e]                                                                 ;;; ^Throwable    SHOULD THESE BE ThreadAbortException?  Only in 461?
-  (or (instance? ThreadInterruptedException (clojure.main/root-cause e))         ;;; ThreadDeath
-      (and (instance? Compiler+CompilerException e)                              ;;; Compiler$CompilerException
-           (instance? ThreadInterruptedException (.InnerException e)))))         ;;; ThreadDeath   .getCause
+#?(:clj
+   (defn- interrupted?
+     "Returns true if the given throwable was ultimately caused by an interrupt."
+     [^Throwable e]
+     (or (instance? ThreadDeath (clojure.main/root-cause e))
+         (and (instance? Compiler$CompilerException e)
+              (instance? ThreadDeath (.getCause e)))))
+   :cljr (defn- interrupted?
+           "Returns true if the given throwable was ultimately caused by an interrupt."
+           [^Exception e] ;;; SHOULD THESE BE ThreadAbortException?  Only in 461?
+           (or (instance? ThreadInterruptedException (clojure.main/root-cause e))
+               (and (instance? Compiler+CompilerException e)
+                    (instance? ThreadInterruptedException (.InnerException e))))))
 
 (defn evaluate
   "Evaluates a msg's code within the dynamic context of its session.
@@ -74,7 +99,7 @@
     (if (and ns (not explicit-ns))
       (t/send transport (response-for msg {:status #{:error :namespace-not-found :done}
                                            :ns ns}))
-      (let [                                                                            ;;; no such thing for CLR:   ctxcl (.getContextClassLoader (Thread/currentThread))
+      (let [ctxcl #?(:clj (.getContextClassLoader (Thread/currentThread)) :cljr nil) ;; no such thing in CLR
             ;; TODO: out-limit -> out-buffer-size | err-buffer-size
             ;; TODO: new options: out-quota | err-quota
             opts {::print/buffer-size (or out-limit (get (meta session) :out-limit))}
@@ -84,7 +109,10 @@
           (clojure.main/repl
            :eval (let [eval-fn (if eval (find-var (symbol eval)) clojure.core/eval)]
                    (fn [form]
-                     (eval-fn form)))                                                   ;;; (with-session-classloader session (eval-fn form))
+                     #?(:clj
+                        (with-session-classloader session (eval-fn form))
+                        :cljr
+                        (eval-fn form))))
            :init #(let [bindings
                         (-> (get-thread-bindings)
                             (into caught/default-bindings)
@@ -106,35 +134,46 @@
                          read-cond (or (-> msg :read-cond keyword)
                                        :allow)]
                      #(try (read {:read-cond read-cond :eof %2} reader)
-                           (catch Exception e                                                   ;;; RuntimeException
+                           (catch #?(:clj RuntimeException :cljr Exception) e
                              ;; If error happens during reading the string, we
                              ;; don't want eval to start reading and executing the
                              ;; rest of it. So we skip over the remaining text.
-                             (.ReadToEnd ^LineNumberingTextReader reader)                      ;;; (.skip ^LineNumberingPushbackReader reader Long/MAX_VALUE)
+                             #?(:clj (.skip ^LineNumberingPushbackReader reader Long/MAX_VALUE)
+                                :cljr (.ReadToEnd ^LineNumberingTextReader reader))
                              (throw e))))
-                   (let [code (.GetEnumerator ^System.Collections.IEnumerable code)]           ;;;  .iterator ^Iterable
-                     #(or (and (.MoveNext code) (.Current code) ) %2)))                        ;;; (.hasNext code) (.next code)
+                   (let [code #?(:clj (.iterator ^Iterable code)
+                                 :cljr (.GetEnumerator ^System.Collections.IEnumerable code))]
+                     #(or #?(:clj (and (.hasNext code) (.next code))
+                             :cljr (and (.MoveNext code) (.Current code)))
+                          %2)))
            :prompt #(reset! session (maybe-restore-original-ns (capture-thread-bindings)))
            :need-prompt (constantly true)
            :print (fn [value]
                     ;; *out* has :tag metadata; *err* does not
-                    (.Flush ^TextWriter *err*)                                                 ;;; .flush ^Writer
-                    (.Flush ^TextWriter *out*)                                                 ;;; .flush  -- added type hint
+                    #?(:clj (.flush ^Writer *err*)
+                       :cljr (.Flush ^TextWriter *err*))
+                    #?(:clj (.flush *out*)
+                       :cljr (.Flush ^TextWriter *out*))
                     (t/send transport (response-for msg {:ns (str (ns-name *ns*))
                                                          :value value
                                                          ::print/keys #{:value}})))
-           :caught (fn [^Exception e]                                                          ;;; Throwable
+           :caught (fn #?(:clj [^Throwable e] :cljr [^Exception e])
                      (when-not (interrupted? e)
                        (let [resp {::caught/throwable e
                                    :status :eval-error
                                    :ex (str (class e))
                                    :root-ex (str (class (clojure.main/root-cause e)))}]
                          (t/send transport (response-for msg resp))))))
-          (finally
-                                                                                               ;;;  (when (misc/java-8?)
-                                                                                               ;;;    (.setContextClassLoader (Thread/currentThread) ctxcl))
-            (.Flush ^TextWriter err)                                                 ;;; .flush  -- added type hint
-            (.Flush ^TextWriter out)))))))                                                 ;;; .flush  -- added type hint
+          #?(:clj
+             (finally
+               (when (misc/java-8?)
+                 (.setContextClassLoader (Thread/currentThread) ctxcl))
+               (.flush err)
+               (.flush out))
+             :cljr
+             (finally
+               (.Flush ^TextWriter err)
+               (.Flush ^TextWriter out))))))))
 
 (defn interruptible-eval
   "Evaluation middleware that supports interrupts.  Returns a handler that supports
