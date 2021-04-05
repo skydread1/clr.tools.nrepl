@@ -1,4 +1,4 @@
-(ns dotnet-tasks
+(ns dotnet
 
   "Dotnet related tasks such as compiling and testing on the clr using `magic` and `nostrand`
 
@@ -18,7 +18,7 @@
   (:require [clojure.test :refer [run-all-tests]]))
 
 (def nrepl-namespaces
-  '[ ;; SRC
+  '[;; SRC
     cnrepl.core
     cnrepl.ack
     cnrepl.middleware
@@ -29,9 +29,12 @@
     cnrepl.middleware.sideloader
     cnrepl.util.print
     ;; TEST
-    ;;cnrepl.bencode-test
-    ;;cnrepl.misc-test
-    ;;cnrepl transport-test
+    cnrepl.bencode-test
+    cnrepl.misc-test
+    cnrepl.transport-test
+    cnrepl.middleware.print-test
+    cnrepl.util.lookup-test
+    cnrepl.util.completion-test
     ])
 
 (defn build-nrepl
