@@ -12,7 +12,8 @@
   {:author "Bozhidar Batsov"
    :added "0.8"}
   (:require
-   [clojure.clr.io :as io]                                              ;;; clojure.java.io
+   #?(:clj [clojure.java.io :as io]
+      :cljr [clojure.clr.io :as io])
    [cnrepl.middleware :as middleware :refer [set-descriptor!]]
    [cnrepl.misc :refer [response-for] :as misc]
    [cnrepl.util.lookup :as lookup]

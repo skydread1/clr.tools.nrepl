@@ -11,7 +11,7 @@
             [cnrepl.core :refer [combine-responses]]
             [cnrepl.middleware.print :as print]
             [cnrepl.transport :as t])
-  (:import [System.IO TextWriter]))                               ;;; [java.io Writer]
+  (:import #?(:clj [java.io Writer] :cljr [System.IO TextWriter])))
 
 (defn echo-handler
   [{:keys [transport] :as msg}]
@@ -42,9 +42,14 @@
                         (doall @resps#)))]
        ~@body)))
 
-(defn custom-printer
-  [value ^TextWriter writer opts]                                             ;;; ^Writer
-  (.Write writer (format "<foo %s %s>" value (or (:sub opts) "..."))))        ;;; .write
+#?(:clj
+   (defn custom-printer
+     [value ^Writer writer opts]
+     (.write writer (format "<foo %s %s>" value (or (:sub opts) "..."))))
+   :cljr
+   (defn custom-printer
+     [value ^TextWriter writer opts]
+     (.Write writer (format "<foo %s %s>" value (or (:sub opts) "...")))))
 
 (deftest value-printing
   (testing-print "bad symbol should fall back to default printer"
@@ -55,7 +60,7 @@
                     ::print/keys  #{:value}
                     ::print/print 'my.missing.ns/printer}))))
   (testing-print "custom printing function symbol should be used"
-    (is (= [{:value "<foo True ...>"}]                                        ;;; true
+    (is (= [{:value #?(:clj "<foo true ...>" :cljr "<foo True ...>")}]
            (handle {::print/keys  #{:value}
                     :value        true
                     ::print/print `custom-printer}))))
@@ -93,9 +98,9 @@
     (let [[resp1 resp2 resp3]
           (handle {:value          (range 512)
                    ::print/stream? 1})]
-      (is (.StartsWith (:value resp1) "(0 1 2 3"))            ;;; .startsWith
+      (is (#?(:clj .startsWith :cljr .StartsWith) (:value resp1) "(0 1 2 3"))
       (is (= {} (dissoc resp1 :value)))
-      (is (.EndsWith (:value resp2) "510 511)"))              ;;; .endsWith
+      (is (#?(:clj .endsWith :cljr .EndsWith) (:value resp2) "510 511)"))
       (is (= {} (dissoc resp2 :value)))
       (is (= {} resp3))))
   (testing-print "respects buffer-size option"
@@ -112,9 +117,9 @@
     (let [[resp1 resp2 resp3] (handle {:value          (range 512)
                                        ::print/stream? 1
                                        ::print/print   `custom-printer})]
-      (is (.StartsWith (:value resp1) "<foo (0 1 2 3"))            ;;; .startsWith
+      (is (#?(:clj .startsWith :cljr .StartsWith) (:value resp1) "<foo (0 1 2 3"))
       (is (= {} (dissoc resp1 :value)))
-      (is (.EndsWith (:value resp2) "510 511) ...>"))              ;;; .endsWith
+      (is (#?(:clj .endsWith :cljr .EndsWith) (:value resp2) "510 511) ...>"))
       (is (= {} (dissoc resp2 :value)))
       (is (= {} resp3))))
   (testing-print "works with custom printer and print-options"
@@ -122,9 +127,9 @@
                                        ::print/stream? 1
                                        ::print/print   `custom-printer
                                        ::print/options {:sub "bar"}})]
-      (is (.StartsWith (:value resp1) "<foo (0 1 2 3"))            ;;; .startsWith
+      (is (#?(:clj .startsWith :cljr .StartsWith) (:value resp1) "<foo (0 1 2 3"))
       (is (= {} (dissoc resp1 :value)))
-      (is (.EndsWith (:value resp2) "510 511) bar>"))              ;;; .endsWith
+      (is (#?(:clj .endsWith :cljr .EndsWith) (:value resp2) "510 511) bar>"))
       (is (= {} (dissoc resp2 :value)))
       (is (= {} resp3)))))
 
@@ -172,9 +177,14 @@
                     ::print/stream? 1
                     ::print/quota   8})))))
 
-(defn custom-printer-2
-  [value ^TextWriter writer]                              ;;; ^Writer
-  (.Write writer (format "<bar %s>" value)))              ;;; .write
+#?(:clj
+   (defn custom-printer-2
+     [value ^Writer writer]
+     (.write writer (format "<bar %s>" value)))
+   :cljr
+   (defn custom-printer-2
+     [value ^TextWriter writer]
+     (.Write writer (format "<bar %s>" value))))
 
 ;; These tests used to the `session-print-configuration` tests from `core-test`.
 ;; here, we are simply testing the use of dynamic vars to configure printing
@@ -218,14 +228,14 @@
                       ::print/buffer-size 16})))))
   (testing-print "setting *quota* works"
     (is (= [{:value                 "<bar (0 "
-             :status                #{:nrepl.middleware.print/truncated}
+             :status                #{:cnrepl.middleware.print/truncated}
              ::print/truncated-keys [:value]}]
            (binding [print/*print-fn* custom-printer-2
                      print/*quota*    8]
              (handle {:value (range 512)})))))
   (testing-print "request can still override *quota*"
     (is (= [{:value                 "<bar (0 1 2 3 4 "
-             :status                #{:nrepl.middleware.print/truncated}
+             :status                #{:cnrepl.middleware.print/truncated}
              ::print/truncated-keys [:value]}]
            (binding [print/*print-fn* custom-printer-2
                      print/*quota*    8]

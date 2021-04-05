@@ -35,7 +35,8 @@
 
 (defn- java-version
   []
-  (let [version-string (.ToString Environment/Version)                                    ;;; (System/getProperty "java.version")
+  (let [version-string #?(:clj (System/getProperty "java.version")
+                          :cljr (.ToString Environment/Version))
         version-seq (re-seq #"\d+" version-string)
         version-map (if (<= 3 (count version-seq))
                       (zipmap [:major :minor :incremental :update] version-seq)
@@ -63,7 +64,7 @@
                                                      :versions {:nrepl (safe-version version/version)
                                                                 :clojure (safe-version
                                                                           (assoc *clojure-version* :version-string (clojure-version)))
-                                                                :java (safe-version (java-version))}
+                                                               :java (safe-version (java-version))}
                                                      :status :done})))
       (h msg))))
 
@@ -86,7 +87,7 @@
               (comp seq (partial set/intersection ops) :handles)
               set)]
     (when (deps start)
-      (throw (ArgumentException.                                                    ;DM: IllegalArgumentException
+      (throw (#?(:clj IllegalArgumentException. :cljr ArgumentException.)
               (format "Middleware %s depends upon itself via %s"
                       (:implemented-by start)
                       dir))))
