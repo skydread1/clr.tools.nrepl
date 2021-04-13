@@ -117,7 +117,7 @@
                     (let [cbuf (to-char-array x)]
 		                  #_(debug/prn-thread "wgw-x" this "///"  x  "///" cbuf "****")
                       (.Write ^TextWriter this cbuf (int 0) (count cbuf))))
-                   ;; commented because failing in Magic for now.
+                   ;; FIXME: commented because failing in `magic` for now.
                    #_([x off len]
                       (locking total
                         (let [cbuf (to-char-array x)
