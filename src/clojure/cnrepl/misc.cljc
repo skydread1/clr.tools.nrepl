@@ -67,7 +67,7 @@
         (catch Exception _))))
 
 #?(:clj
-   (defmacro with-session-classloader ;; for now, definitely a no-op
+   (defmacro with-session-classloader
      "This macro does two things:
 
    1. If the session has a classloader set, then execute the body using that.
@@ -85,7 +85,15 @@
           (with-bindings {clojure.lang.Compiler/LOADER cl#}
             ~@body)
           (finally
-            (.setContextClassLoader (Thread/currentThread) ctxcl#))))))
+            (.setContextClassLoader (Thread/currentThread) ctxcl#)))))
+   :cljr
+   (defmacro with-session-classloader    ;; for now, definitely a no-op
+     [session & body]
+     `(let []
+        (try
+          (with-bindings {}
+            ~@body)
+          (finally)))))
 
 (defn java-8?  ;; definitely a no-op.
   "Util to check if we are using Java 8. Useful for features that behave
