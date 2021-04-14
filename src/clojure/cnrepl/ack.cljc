@@ -39,13 +39,22 @@
 
 ;; TODO: could stand to have some better error handling around all of this
 #_(defn send-ack
-    ([my-port ack-port]
-     (send-ack my-port ack-port t/bencode))
-    ([my-port ack-port transport-fn]
-     (with-open [^java.io.Closeable transport (nrepl/connect :transport-fn transport-fn
-                                                             :port ack-port)]
-       (let [client (nrepl/client transport 1000)]
-         ;; consume response from the server, solely to let that side
-         ;; finish cleanly without (by default) spewing a SocketException when
-         ;; the ack client goes away suddenly
-         (dorun (nrepl/message client {:op "ack" :port my-port}))))))
+  ([my-port ack-port]
+   (send-ack my-port ack-port t/bencode))
+  ([my-port ack-port transport-fn]
+   #?(:clj
+      (with-open [^java.io.Closeable transport (nrepl/connect :transport-fn transport-fn
+                                                              :port ack-port)]
+        (let [client (cnrepl/client transport 1000)]
+          ;; consume response from the server, solely to let that side
+          ;; finish cleanly without (by default) spewing a SocketException when
+          ;; the ack client goes away suddenly
+          (dorun (cnrepl/message client {:op "ack" :port my-port}))))
+      :cljr
+      (with-open [^IDisposable transport (nrepl/connect :transport-fn transport-fn
+                                                              :port ack-port)]
+        (let [client (cnrepl/client transport 1000)]
+          ;; consume response from the server, solely to let that side
+          ;; finish cleanly without (by default) spewing a SocketException when
+          ;; the ack client goes away suddenly
+          (dorun (cnrepl/message client {:op "ack" :port my-port})))))))
