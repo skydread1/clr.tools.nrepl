@@ -190,15 +190,14 @@
                             #_(Dispose [disposing] (when disposing (.Dispose input-queue))) ;;cannot use because method is protected
                             (Dispose [] (.Dispose input-queue))
 				                    (Peek [] -1) ;;; ADDED  -- we'll just say we don't support it
-                            ;; FIXME: Mostly commented because error in `magic`.
-                            #_(Read
+                            (Read
                               ([]
                                (let [^System.IO.TextReader this this]
                                  (proxy-super Read)))
-                              ([x]
+                              ([^|System.Char[]|x]
                                (let [^System.IO.TextReader this this]
                                  (proxy-super Read x)))
-                              ([^chars buf off len]
+                              ([^|System.Char[]| buf off len]
 					                     #_(debug/prn-thread "Read[3]")
 					                     (if (zero? len)
                                  -1
