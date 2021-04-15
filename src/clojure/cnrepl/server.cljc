@@ -253,6 +253,5 @@
        (.Listen ss 0)                                 ;; DM: ADDED
        (future (accept-connection server))
        (when ack-port
-         #_(ack/send-ack (:port server) ack-port transport-fn) ;;TODO: port send-ack
-         )
+         (ack/send-ack (:port server) ack-port transport-fn))
        server)))
