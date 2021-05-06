@@ -190,11 +190,11 @@
                             #_(Dispose [disposing] (when disposing (.Dispose input-queue))) ;;cannot use because method is protected
                             (Dispose [] (.Dispose input-queue))
 				                    (Peek [] -1) ;;; ADDED  -- we'll just say we don't support it
-                            (Read
+                            #_(Read
                               ([]
                                (let [^System.IO.TextReader this this]
                                  (proxy-super Read)))
-                              ([^|System.Char[]|x]
+                              ([^|System.Char[]| x] ;; not compiling because x type should be Span<Char>
                                (let [^System.IO.TextReader this this]
                                  (proxy-super Read x)))
                               ([^|System.Char[]| buf off len]
