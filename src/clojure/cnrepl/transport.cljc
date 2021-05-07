@@ -136,7 +136,7 @@
      `(try
         ~@body
         #_(catch RuntimeException e# ;;; I'm not sure what is covered here
-            (if (= "EOF while reading" (.getMessage e#))
+            (if (= "EOF while reading" (.Message e#))
               (throw (SocketException. "The transport's socket appears to have lost its connection to the nREPL server"))
               (throw e#)))
         (catch System.IO.EndOfStreamException e#
