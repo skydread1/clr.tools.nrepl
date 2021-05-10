@@ -238,7 +238,7 @@
 ;;; addr (fn [^String bind ^Integer port]  (INetSockeAddress. bind port))
            transport-fn (or transport-fn t/bencode)
            bind (or bind "127.0.0.1")
-           ipe (IPEndPoint. (IPAddress. bind) port) ;; DM:ADDED
+           ipe (IPEndPoint. (IPAddress/Parse bind) ^System.Int32 port) ;; DM:ADDED
            ss (doto
                   (Socket. (.AddressFamily ipe)  SocketType/Stream  ProtocolType/Tcp) ;;  DM:Added
                   (.SetSocketOption SocketOptionLevel/Socket SocketOptionName/ReuseAddress true)

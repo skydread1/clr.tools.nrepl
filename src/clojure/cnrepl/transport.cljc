@@ -194,7 +194,7 @@
   {:added "0.7"}
   ([^Socket s] (edn s s s))
   ([in out & [^Socket s]]
-   (let [in #?(:clj (java.io.PushbackReader. (io/reader))
+   (let [in #?(:clj (java.io.PushbackReader. (io/reader in))
                :cljr (PushbackTextReader. (io/text-reader in)))
          out #?(:clj (io/writer out)
                 :cljr (io/text-writer out))]
